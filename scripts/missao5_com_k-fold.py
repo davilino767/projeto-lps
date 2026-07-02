@@ -11,7 +11,6 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
-
 df = pd.read_csv('../subset.csv')
 y = df['target'].values
 
@@ -83,15 +82,22 @@ for fold_idx, (idx_treino_val, idx_teste) in enumerate(kfold.split(X, y)):
     y_val_t = torch.tensor(y_val, dtype=torch.float32).view(-1, 1)
     X_teste_t = torch.tensor(X_teste, dtype=torch.float32)
 
+
     loader_treino = DataLoader(
         TensorDataset(X_treino_t, y_treino_t),
-        batch_size=32,
+        batch_size=128, 
         shuffle=True,
     )
 
     modelo = RingerModel(X_treino.shape[1])
     criterio = nn.BCELoss()
-    otimizador = optim.Adam(modelo.parameters(), weight_decay=0.001)
+    
+   
+    otimizador = optim.Adam(modelo.parameters(), lr=0.001, weight_decay=0.001)
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        otimizador, mode='min', factor=0.5, patience=2
+    )
 
     melhor_val_loss = float('inf')
     epocas_sem_melhora = 0
@@ -117,6 +123,8 @@ for fold_idx, (idx_treino_val, idx_teste) in enumerate(kfold.split(X, y)):
 
         historico['loss_treino'].append(loss_treino_media)
         historico['loss_val'].append(loss_val)
+
+        scheduler.step(loss_val)
 
         if loss_val < melhor_val_loss:
             melhor_val_loss = loss_val
