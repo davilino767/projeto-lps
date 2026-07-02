@@ -1,35 +1,35 @@
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, roc_curve, auc
+import copy
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import ConfusionMatrixDisplay, auc, confusion_matrix, roc_curve
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
-import copy
 
-df = pd.read_csv('../subset.csv')
-
-y = df['target'].values
+df = pd.read_csv("../subset.csv")
+y = df["target"].values
 
 colunas_para_remover = [
-    col for col in df.columns
-    if 'ElectronContainer'    in col
-    or 'HLTElectronContainer' in col
-    or 'MonteCarloContainer'  in col
+    col
+    for col in df.columns
+    if "ElectronContainer" in col
+    or "HLTElectronContainer" in col
+    or "MonteCarloContainer" in col
 ]
-colunas_para_remover.extend(['target', 'id'])
+colunas_para_remover.extend(["target", "id"])
 
 X_base = df.drop(columns=colunas_para_remover)
 
-rings_limpos     = X_base['TrigEMClusterContainer.ringsE'].str.strip('[]')
-rings_expandidos = rings_limpos.str.split(',', expand=True).astype(float)
-rings_expandidos.columns = [f'ring_{i}' for i in range(rings_expandidos.shape[1])]
+rings_limpos = X_base["TrigEMClusterContainer.ringsE"].str.strip("[]")
+rings_expandidos = rings_limpos.str.split(",", expand=True).astype(float)
+rings_expandidos.columns = [f"ring_{i}" for i in range(rings_expandidos.shape[1])]
 
-X_base = X_base.drop(columns=['TrigEMClusterContainer.ringsE'])
-X_df   = pd.concat([X_base, rings_expandidos], axis=1)
+X_base = X_base.drop(columns=["TrigEMClusterContainer.ringsE"])
+X_df = pd.concat([X_base, rings_expandidos], axis=1)
 
 X_df = X_df.replace([np.inf, -np.inf], np.nan)
 X_df = X_df.fillna(0)
@@ -44,22 +44,22 @@ X_treino, X_validacao, y_treino, y_validacao = train_test_split(
     X_resto, y_resto, test_size=0.25, random_state=42, stratify=y_resto
 )
 
-scaler      = StandardScaler()
-X_treino    = scaler.fit_transform(X_treino)
+scaler = StandardScaler()
+X_treino = scaler.fit_transform(X_treino)
 X_validacao = scaler.transform(X_validacao)
-X_teste     = scaler.transform(X_teste)
+X_teste = scaler.transform(X_teste)
 
-X_treino_t = torch.tensor(X_treino,    dtype=torch.float32)
-y_treino_t = torch.tensor(y_treino,    dtype=torch.float32).view(-1, 1)
+X_treino_t = torch.tensor(X_treino, dtype=torch.float32)
+y_treino_t = torch.tensor(y_treino, dtype=torch.float32).view(-1, 1)
 
-X_val_t    = torch.tensor(X_validacao, dtype=torch.float32)
-y_val_t    = torch.tensor(y_validacao, dtype=torch.float32).view(-1, 1)
+X_val_t = torch.tensor(X_validacao, dtype=torch.float32)
+y_val_t = torch.tensor(y_validacao, dtype=torch.float32).view(-1, 1)
 
-X_teste_t  = torch.tensor(X_teste,     dtype=torch.float32)
-y_teste_t  = torch.tensor(y_teste,     dtype=torch.float32).view(-1, 1)
+X_teste_t = torch.tensor(X_teste, dtype=torch.float32)
+y_teste_t = torch.tensor(y_teste, dtype=torch.float32).view(-1, 1)
 
 dataset_treino = TensorDataset(X_treino_t, y_treino_t)
-loader_treino  = DataLoader(dataset_treino, batch_size=32, shuffle=True)
+loader_treino = DataLoader(dataset_treino, batch_size=128, shuffle=True)
 
 
 class ClassificadorRinger(nn.Module):
@@ -67,9 +67,9 @@ class ClassificadorRinger(nn.Module):
     def __init__(self, numero_de_entradas):
         super(ClassificadorRinger, self).__init__()
         self.camada_oculta = nn.Linear(numero_de_entradas, 5)
-        self.relu          = nn.ReLU()
-        self.camada_saida  = nn.Linear(5, 1)
-        self.sigmoid       = nn.Sigmoid()
+        self.relu = nn.ReLU()
+        self.camada_saida = nn.Linear(5, 1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.relu(self.camada_oculta(x))
@@ -77,16 +77,19 @@ class ClassificadorRinger(nn.Module):
         return x
 
 
-model     = ClassificadorRinger(numero_de_entradas=X_treino.shape[1])
+model = ClassificadorRinger(numero_de_entradas=X_treino.shape[1])
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, mode="min", factor=0.5, patience=2
+)
 
-epochs             = 50
-patience           = 5
-melhor_val_loss    = float('inf')
+epochs = 50
+patience = 5
+melhor_val_loss = float("inf")
 epocas_sem_melhora = 0
-melhores_pesos     = copy.deepcopy(model.state_dict())
-historico          = {'loss': [], 'val_loss': []}
+melhores_pesos = copy.deepcopy(model.state_dict())
+historico = {"loss": [], "val_loss": []}
 
 for epoca in range(epochs):
 
@@ -95,8 +98,8 @@ for epoca in range(epochs):
 
     for lote_X, lote_y in loader_treino:
         optimizer.zero_grad()
-        predicao       = model(lote_X)
-        loss           = criterion(predicao, lote_y)
+        predicao = model(lote_X)
+        loss = criterion(predicao, lote_y)
         loss.backward()
         optimizer.step()
         loss_acumulada += loss.item() * lote_X.size(0)
@@ -106,18 +109,21 @@ for epoca in range(epochs):
     model.eval()
     with torch.no_grad():
         predicao_val = model(X_val_t)
-        loss_val     = criterion(predicao_val, y_val_t).item()
+        loss_val = criterion(predicao_val, y_val_t).item()
 
-    historico['loss'].append(loss_treino)
-    historico['val_loss'].append(loss_val)
+    historico["loss"].append(loss_treino)
+    historico["val_loss"].append(loss_val)
+
+    scheduler.step(loss_val)
 
     if loss_val < melhor_val_loss:
-        melhor_val_loss    = loss_val
-        melhores_pesos     = copy.deepcopy(model.state_dict())
+        melhor_val_loss = loss_val
+        melhores_pesos = copy.deepcopy(model.state_dict())
         epocas_sem_melhora = 0
     else:
         epocas_sem_melhora += 1
         if epocas_sem_melhora >= patience:
+            print(f"Early stopping na época {epoca + 1}")
             break
 
 model.load_state_dict(melhores_pesos)
@@ -142,35 +148,43 @@ print(f"PD: {pd_val * 100:.2f}%")
 print(f"FA: {fa_val * 100:.2f}%")
 
 plt.figure(figsize=(8, 6))
-plt.plot(historico['loss'],     label='Treino',    color='steelblue', linewidth=2)
-plt.plot(historico['val_loss'], label='Validação', color='tomato',    linewidth=2, linestyle='--')
-plt.title('Curva de Loss por Época')
-plt.xlabel('Épocas')
-plt.ylabel('Loss')
+plt.plot(historico["loss"], label="Treino", color="steelblue", linewidth=2)
+plt.plot(
+    historico["val_loss"],
+    label="Validação",
+    color="tomato",
+    linewidth=2,
+    linestyle="--",
+)
+plt.title("Curva de Loss por Época")
+plt.xlabel("Épocas")
+plt.ylabel("Loss")
 plt.legend()
-plt.grid(True, linestyle=':', alpha=0.7)
+plt.grid(True, linestyle=":", alpha=0.7)
 plt.tight_layout()
-plt.savefig('grafico_loss.png')
+plt.savefig("grafico_loss.png")
 plt.close()
 
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Jato (0)', 'Elétron (1)'])
-disp.plot(cmap=plt.cm.Blues, values_format='d')
-plt.title('Matriz de Confusão')
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm, display_labels=["Jato (0)", "Elétron (1)"]
+)
+disp.plot(cmap=plt.cm.Blues, values_format="d")
+plt.title("Matriz de Confusão")
 plt.tight_layout()
-plt.savefig('matriz_confusao.png')
+plt.savefig("matriz_confusao.png")
 plt.close()
 
 fpr, tpr, _ = roc_curve(y_teste, y_prob)
-roc_auc     = auc(fpr, tpr)
+roc_auc = auc(fpr, tpr)
 
 plt.figure(figsize=(8, 6))
-plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc:.4f}')
-plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-plt.xlabel('FA')
-plt.ylabel('PD')
-plt.title('Curva ROC')
-plt.legend(loc='lower right')
-plt.grid(True, linestyle=':', alpha=0.7)
+plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"AUC = {roc_auc:.4f}")
+plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
+plt.xlabel("FA")
+plt.ylabel("PD")
+plt.title("Curva ROC")
+plt.legend(loc="lower right")
+plt.grid(True, linestyle=":", alpha=0.7)
 plt.tight_layout()
-plt.savefig('curva_roc.png')
+plt.savefig("curva_roc.png")
 plt.close()
